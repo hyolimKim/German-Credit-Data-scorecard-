@@ -213,4 +213,49 @@ print(max_error)
 
 # 모델 정확도 시각화
 plot(rf_model, ylim = c(0, 1))
+
 legend('topright', colnames(rf_model$err.rate), col = 1:3, fill = 1:3)
+
+#Scorecard용 데이터 
+train_sc <- train %>% mutate_if(is.factor, as.character)
+test_sc  <- test  %>% mutate_if(is.factor, as.character)
+
+# stroke 타겟  numeric으로 변환 
+train_sc$stroke <- as.numeric(train_sc$stroke)
+test_sc$stroke  <- as.numeric(test_sc$stroke)
+
+# 변수 binning (IV 기반 자동 bin 분할)
+bins <- woebin(train_sc, y = "stroke")
+
+#WOE 변환
+train_woe <- woebin_ply(train_sc, bins)
+test_woe  <- woebin_ply(test_sc, bins)
+
+#로지스틱 회귀 기반 Scorecard 모델
+scorecard_model <- glm(stroke ~ ., data = train_woe, family = binomial)
+summary(scorecard_model)
+
+
+#Scorecard 생성
+card <- scorecard(
+  bins = bins,
+  model = scorecard_model,
+  points0 = 600,   # baseline score
+  odds0 = 1/20,    # baseline odds
+  pdo = 50         # points to double odds
+)
+
+card
+
+#데이터별 Score 계산
+train_score <- scorecard_ply(train_sc, card)
+test_score  <- scorecard_ply(test_sc,  card)
+
+head(test_score)
+
+#Score 기반 ROC-AUC 확인
+library(pROC)
+roc_score <- roc(test$stroke, test_score$score)
+auc(roc_score)
+plot(roc_score, col = "blue", main = "Scorecard ROC Curve")
+
